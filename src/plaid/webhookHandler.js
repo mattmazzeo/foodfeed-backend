@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const dotenv = require('dotenv');
 const { getRecentTransactions } = require('./plaidService');
+const { processTransactions, createFeedItems } = require('./transactionFilterService');
 
 dotenv.config({ path: './config/.env' });
 
@@ -118,10 +119,13 @@ async function handleItemWebhook(webhookEvent) {
  */
 async function fetchAndStoreTransactions(userId, accessToken) {
   try {
+    // Get all recent transactions from Plaid
     const transactions = await getRecentTransactions(accessToken);
     
+    console.log(`Retrieved ${transactions.length} transactions from Plaid for user ${userId}`);
+    
     for (const transaction of transactions) {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('transactions')
         .upsert({
           user_id: userId,
@@ -140,7 +144,14 @@ async function fetchAndStoreTransactions(userId, accessToken) {
       }
     }
     
-    console.log(`Stored ${transactions.length} transactions for user ${userId}`);
+    const processedTransactions = await processTransactions(transactions);
+    
+    console.log(`Filtered ${processedTransactions.length} food-related transactions out of ${transactions.length} total`);
+    
+    // Create feed items from processed transactions
+    await createFeedItems(userId, processedTransactions);
+    
+    console.log(`Completed processing transactions for user ${userId}`);
   } catch (error) {
     console.error('Error fetching and storing transactions:', error);
     throw error;
